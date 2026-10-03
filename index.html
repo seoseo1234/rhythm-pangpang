@@ -258,17 +258,24 @@ const $ = id => document.getElementById(id);
 let AC = null, master = null, musicBus = null, noiseBuf = null;
 function audio() {
   if (!AC) {
+    // iOS: 무음 모드 스위치가 켜져 있어도 소리가 나도록 (처음 한 번만 — 매번 바꾸면 사파리가 오디오를 중단시킴)
+    try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
     AC = new (window.AudioContext || window.webkitAudioContext)();
     master = AC.createGain(); master.gain.value = 0.8; master.connect(AC.destination);
     musicBus = AC.createGain(); musicBus.gain.value = 0.55; musicBus.connect(master);
     noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.5, AC.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // 들리지 않는 아주 작은 소리를 계속 흘려서, 게임 사이 조용할 때 iOS가 오디오를 재우지 않게 함
+    const keep = AC.createOscillator(), kg = AC.createGain();
+    kg.gain.value = 0.00001; keep.frequency.value = 40; keep.connect(kg); kg.connect(AC.destination); keep.start();
   }
-  if (AC.state === 'suspended') AC.resume();
-  // iOS: 무음 모드 스위치가 켜져 있어도 게임 소리가 나도록
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  // 'suspended'뿐 아니라 iOS의 'interrupted'(전화·알림·화면 전환 뒤)도 다시 깨움
+  if (AC.state !== 'running') { try { AC.resume().catch(() => {}); } catch (e) {} }
 }
+const audioReady = () => AC && AC.state === 'running';
+// iOS는 touchend·click 안에서만 오디오를 깨울 수 있어서, 화면을 만질 때마다 확인
+['touchend', 'click', 'keydown'].forEach(ev => addEventListener(ev, () => { if (AC && AC.state !== 'running') audio(); }, { capture: true, passive: true }));
 const lat = () => (AC.outputLatency || AC.baseLatency || 0);
 function env(t, peak, dur, bus = master) {
   const gn = AC.createGain();
@@ -465,6 +472,7 @@ function burst(x, y, colors, n = 14, speed = 6) {
 function press() {
   if (!S || S.over) return;
   audio();
+  if (!audioReady()) return; // 오디오가 아직 안 깨어났으면 이번 터치는 깨우기용
   const b = (AC.currentTime - lat() - settings.offset / 1000 - S.t0) / S.spb;
   if (b < -0.5) return;
   SFX[S.def.hitSnd](AC.currentTime);
@@ -1130,6 +1138,13 @@ function frame() {
       drawFx();
       drawHud(nb);
       drawCountIn(nb);
+      // 오디오 시계가 멈춰 있으면(iOS가 소리를 막은 경우) 게임도 멈춰 있으니 터치를 부탁
+      if (!audioReady()) {
+        g.fillStyle = 'rgba(42,27,77,.75)'; g.fillRect(0, 0, W, H);
+        text('👆', W / 2, H / 2 - 60, 80, '#fff');
+        text('화면을 톡 눌러 주세요!', W / 2, H / 2 + 30, 50, '#ffd23d', 'center', '#5a2d82', 10);
+        text('소리가 켜지면 게임이 시작돼요', W / 2, H / 2 + 90, 26, '#fff');
+      }
     }
   } else if (!S) drawIdle();
   requestAnimationFrame(frame);
