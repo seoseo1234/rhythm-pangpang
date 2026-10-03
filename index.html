@@ -215,6 +215,7 @@ const SFX = {
   launch:  t => { nz(t, 900, 0.6, 0.45, 0.6); tone(t, 200, 0.4, 'sawtooth', 0.12, 900); },
   boing:   t => tone(t, 220, 0.18, 'sine', 0.45, 520),
   pop:     t => { nz(t, 2500, 0.8, 0.07, 1); tone(t, 1200, 0.05, 'triangle', 0.2, 300); },
+  kungW:   t => { tone(t, 150, 0.2, 'sine', 0.8, 50); nz(t, 300, 1, 0.08, 0.3); },
   bell:    t => { tone(t, 1318, 0.5, 'sine', 0.35); tone(t, 2637, 0.25, 'sine', 0.12); },
   ui:      t => tone(t, 880, 0.06, 'triangle', 0.25, 1320),
   ding:    (t, i) => tone(t, [1046, 1318, 1568][i] || 1568, 0.3, 'triangle', 0.3),
@@ -835,18 +836,25 @@ const game5 = {
 };
 
 /* ================= 게임 6: 왈츠 펭귄 (3박자) ================= */
+// 처음 2마디는 듣기만 하고, 그다음 6마디씩 쿵 → 짝 짝 → 섞기
+const G6_LISTEN = 2, G6_BARS = 20;
 const G6_C = [[0], [0, 1, 2], [1, 2], [0, 2], [0], [0, 1, 2]];
-const g6pat = bar => bar < 6 ? [0] : bar < 12 ? [1, 2] : G6_C[(bar - 12) % G6_C.length];
-const g6label = bar => bar < 6 ? '"쿵"에 눌러요!' : bar < 12 ? '"짝 짝"에 눌러요!' : '동그라미를 보고 눌러요!';
+const g6pat = bar => bar < G6_LISTEN ? [] : bar < 8 ? [0] : bar < 14 ? [1, 2] : G6_C[(bar - 14) % G6_C.length];
+const g6label = bar => bar < G6_LISTEN ? '👂 먼저 들어 봐요: 쿵 짝 짝' : bar < 8 ? '공이 "쿵"에 떨어질 때 눌러요!' : bar < 14 ? '공이 "짝 짝"에 떨어질 때 눌러요!' : '주황 동그라미에 공이 떨어질 때!';
+const G6_X = [380, 480, 580];
 const game6 = {
   id: 'waltz', name: '왈츠 펭귄', emoji: '🐧', color: 'linear-gradient(135deg,#c79bff,#7b3fd1)', solid: '#9b5de5',
   short: '쿵 짝 짝, 세 박자 춤을 춰요', meter: 3, prog: [0, 7, 5, 7], root: 130.8,
-  how: ['왈츠는 <b>"쿵 짝 짝"</b> 세 박자 음악이에요 🎻', '처음엔 센 박 <b>"쿵"</b>에만 눌러요.', '다음엔 여린 박 <b>"짝 짝"</b>에 눌러요.', '마지막엔 위쪽 <b>동그라미</b>가 알려 주는 박에 눌러요!'],
-  hitSnd: 'bell', fxPos: [480, 240],
+  how: ['왈츠는 <b>"쿵 짝 짝"</b> 세 박자 음악이에요 🎻 처음 두 마디는 <b>듣기만</b> 해요.', '위쪽의 <b>통통 공</b>이 쿵·짝·짝 동그라미 위로 박자마다 떨어져요.', '처음엔 공이 <b>"쿵"</b>에 떨어질 때, 다음엔 <b>"짝 짝"</b>에 떨어질 때 눌러요.', '누를 박에는 <b>줄어드는 고리</b>가 생겨요. 고리가 딱 닿을 때 눌러요!'],
+  hitSnd: 'bell', fxPos: [480, 255],
   build() {
-    const targets = [];
-    for (let bar = 0; bar < 18; bar++) for (const p of g6pat(bar)) targets.push({ b: bar * 3 + p, bar, p });
-    return { len: 54, cues: [], targets };
+    const targets = [], cues = [];
+    for (let bar = 0; bar < G6_BARS; bar++) {
+      for (const p of g6pat(bar)) targets.push({ b: bar * 3 + p, bar, p });
+      // 음악을 꺼도 쿵(낮은 북)·짝(가벼운 소리)은 들리게
+      if (!settings.music) { cues.push({ b: bar * 3, s: 'kungW' }); cues.push({ b: bar * 3 + 1, s: 'tick' }, { b: bar * 3 + 2, s: 'tick' }); }
+    }
+    return { len: G6_BARS * 3, cues, targets };
   },
   onHit() { burst(480, 330, ['#c79bff', '#ffd23d', '#ff6f91', '#fff'], 12, 5); },
   draw(nb) {
@@ -858,28 +866,47 @@ const game6 = {
     rrect(-20, 420, W + 40, 140, 30, '#d9b98c');
     for (let x = 0; x < W; x += 80) g.fillRect(x, 420, 2, 120);
     g.fillStyle = 'rgba(0,0,0,.08)';
-    const bar = Math.max(0, Math.floor(nb / 3)), bi = nb >= 0 ? Math.floor(nb) % 3 : -1;
+    const bar = Math.max(0, Math.floor(nb / 3)), bi = nb >= 0 ? Math.floor(nb) % 3 : -1, f = frac(nb);
     const pulse = beatPulse(nb), strong = bi === 0;
     const sway = nb >= 0 ? Math.sin(Math.PI * nb / 3 * 2) * 0.18 : 0;
-    const npcHop = strong ? pulse * 24 : pulse * 8;
-    penguin(220, 340 - npcHop, 62, sway, strong ? pulse : 0, strong && pulse > 0.4);
-    penguin(740, 340 - npcHop, 62, sway, strong ? pulse : 0, strong && pulse > 0.4);
+    // 친구 펭귄: 셋째 박에 몸을 웅크렸다가 "쿵"에 맞춰 폴짝 (미리 보고 준비할 수 있게)
+    const crouch = bi === 2 || nb < 0 && nb > -1 ? f * 14 : 0;
+    const npcHop = strong ? Math.sin(Math.PI * Math.min(1, f * 1.4)) * 34 : pulse * 6;
+    penguin(220, 340 - npcHop + crouch, 62, sway, strong ? pulse : 0, strong && pulse > 0.3);
+    penguin(740, 340 - npcHop + crouch, 62, sway, strong ? pulse : 0, strong && pulse > 0.3);
     const pa = pressAnim(nb);
     penguin(480, 330 - pa * 30, 72, -sway + pa * 0.3 * Math.sin(nb * 20), pa, pa > 0.2);
     rrect(430, 435, 100, 32, 16, '#fff'); text('나', 480, 452, 22, '#7b3fd1');
-    // 박자 표시: 쿵 짝 짝
-    const showBar = Math.min(bar, 17), pat = g6pat(showBar), y = 105;
+    // 박자 표시: 쿵 짝 짝 — 셋째 박 후반부터는 다음 마디 모양을 미리 보여 줌
+    const showBar = Math.min(bi === 2 && f > 0.5 ? bar + 1 : bar, G6_BARS - 1), pat = g6pat(showBar), y = 140;
     rrect(300, y - 42, 360, 84, 42, 'rgba(255,255,255,.92)');
     ['쿵', '짝', '짝'].forEach((w, k) => {
-      const x = 380 + k * 100, isT = pat.includes(k), active = bi === k && nb < S.chart.len;
+      const x = G6_X[k], isT = pat.includes(k), active = bi === k && nb < S.chart.len;
       const tg = S.targets.find(t => t.bar === showBar && t.p === k);
       const done = tg && tg.res ? (tg.res === 'miss' ? '#c9bdb2' : tg.res === 'perfect' ? '#ffb300' : '#3bb273') : null;
-      circ(x, y, (k === 0 ? 30 : 24) + (active ? 6 * pulse : 0), done || (active ? '#ffe7a8' : '#f1eaf7'), isT ? '#ff8a3d' : null, 5);
+      circ(x, y, (k === 0 ? 30 : 24) + (active ? 6 * pulse : 0), done || (isT ? '#ffd9b8' : active ? '#ffe7a8' : '#f1eaf7'), isT ? '#ff8a3d' : null, 5);
       text(w, x, y + 1, k === 0 ? 28 : 22, '#5a2d82');
     });
+    // 줄어드는 고리: 누를 박이 다가오면 고리가 동그라미로 좁혀짐
+    for (const t of S.targets) {
+      const ahead = t.b - nb;
+      if (t.res || ahead < 0 || ahead > 1.5) continue;
+      const base = t.p === 0 ? 30 : 24;
+      g.globalAlpha = ease(1 - ahead / 1.5) * 0.9 + 0.1;
+      circ(G6_X[t.p], y, base + ahead * 45, null, '#ff8a3d', 5);
+      g.globalAlpha = 1;
+    }
+    // 통통 공: 박마다 동그라미 위에 떨어짐 (쿵 → 짝 → 짝 → 다시 쿵)
+    if (nb > -1 && nb < S.chart.len) {
+      const k = nb < 0 ? 2 : bi, from = G6_X[k], to = G6_X[(k + 1) % 3];
+      const hgt = k === 2 ? 55 : 35, bx = from + (to - from) * f, byy = y - 40 - Math.sin(Math.PI * f) * hgt;
+      const nextT = S.targets.some(t => t.b === Math.floor(nb) + 1);
+      ell(bx, y - 34, 12 * (1 - Math.sin(Math.PI * f) * 0.5), 3, 0, 'rgba(90,45,130,.25)');
+      circ(bx, byy, 13, nextT ? '#ff8a3d' : '#c79bff', '#fff', 3);
+    }
     if (nb >= 0 && nb < S.chart.len) {
-      const next = (bar + 1) % 6 === 0 && bar < 17 && g6label(bar + 1) !== g6label(bar);
-      text(next ? '다음: ' + g6label(bar + 1) : g6label(bar), W / 2, 185, 30, next ? '#ffd23d' : '#fff', 'center', '#3a1f6b');
+      const next = bar + 1 < G6_BARS && g6label(bar + 1) !== g6label(bar);
+      text(next ? '다음: ' + g6label(bar + 1) : g6label(bar), W / 2, 215, 28, next ? '#ffd23d' : '#fff', 'center', '#3a1f6b');
     }
   },
 };
